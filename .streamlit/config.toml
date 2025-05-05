@@ -1,0 +1,71 @@
+# .streamlit/config.toml
+<<<<<<< HEAD
+# Configuration for Streamlit running on Hugging Face Spaces (Native SDK)
+
+[server]
+# headless = true: Recommended for server environments where no browser window is opened automatically.
+# Streamlit often detects this automatically, but setting it explicitly is safe.
+headless = true
+
+# port = 7860: Explicitly set the port Streamlit should listen on.
+# Hugging Face Spaces typically routes external traffic to port 7860 for the primary app.
+port = 7860
+
+# enableXsrfProtection = true: Keep Cross-Site Request Forgery protection enabled for security.
+# Only set this to false temporarily for debugging specific 403 errors during development,
+# and ensure it's true for production/sharing.
+enableXsrfProtection = true
+
+# enableCORS = true: Cross-Origin Resource Sharing. Usually defaults to true and handled
+# by the HF environment. Leave commented out unless specific CORS errors occur.
+# enableCORS = true
+
+# maxUploadSize = 200: Default is 200MB. Uncomment and increase if you need to allow larger file uploads.
+# maxUploadSize = 500
+
+
+[browser]
+# gatherUsageStats = false: Disable sending telemetry data to Streamlit.
+gatherUsageStats = false
+
+# serverAddress = "your-username-your-spacename.hf.space":
+# Tells Streamlit its public address. The native HF SDK often handles this correctly,
+# so leave it commented out initially. Uncomment and set your specific Space URL
+# (e.g., "mgbam-dataanalystai.hf.space") if you encounter WebSocket connection issues
+# or persistent XSRF/403 errors that weren't solved otherwise.
+# serverAddress = "mgbam-dataanalystai.hf.space" # Example: Replace with your actual space name
+
+# serverPort = 443: Tells Streamlit the external port (usually 443 for HTTPS).
+# Generally not needed as Streamlit tries to detect this. Leave commented out.
+# serverPort = 443
+
+
+[theme]
+# Optional: Define a custom theme if desired. Uncomment and modify.
+# primaryColor="#FF4B4B"
+# backgroundColor="#0E1117"
+# secondaryBackgroundColor="#262730"
+# textColor="#FAFAFA"
+# font="sans serif"
+=======
+# Configuration for Local Streamlit Development
+
+[server]
+# port = 7860 # Or 8501 (default) - set if you want a specific local port
+# headless = false # Default for local running is false (opens browser)
+enableXsrfProtection = true # Keep enabled for security best practice
+
+[browser]
+gatherUsageStats = false     # Optional: Turn off usage statistics reporting
+
+[theme]
+# Example Professional Theme (Keep this or modify)
+primaryColor="#4A90E2"
+backgroundColor="#0E1117"
+secondaryBackgroundColor="#1C2029"
+textColor="#FAFAFA"
+font="sans serif"
+
+[client]
+showFileUploaderProgress = true
+>>>>>>> 946a937 (Add application file)

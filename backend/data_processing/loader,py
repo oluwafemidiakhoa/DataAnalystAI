@@ -1,0 +1,170 @@
+# backend/data_processing/loader.py
+# Dedicated module for loading data from various sources
+
+import pandas as pd
+import logging
+import io
+from pathlib import Path
+from typing import Optional, Union, Any # For type hints
+
+# Attempt import required libraries, log if missing
+try:
+    import openpyxl # Needed for load_dataframe_from_file
+except ImportError:
+    logging.warning("openpyxl not installed. Loading .xlsx files will fail.")
+
+logger = logging.getLogger(__name__)
+
+def load_dataframe_from_file(uploaded_file_or_path: Union[str, Any]) -> pd.DataFrame:
+    """
+    Loads data from CSV, Excel, or JSON file into a Pandas DataFrame.
+    Accepts a file path (string) or a readable, seekable file-like object
+    (e.g., from st.file_uploader).
+
+    Args:
+        uploaded_file_or_path: Path string or file-like object.
+
+    Returns:
+        Pandas DataFrame.
+
+    Raises:
+        ValueError: On invalid input type or unsupported file format.
+        FileNotFoundError: If path string points to non-existent file.
+        Exception: For general file reading errors.
+    """
+    file_name = ""
+    file_obj = None
+    is_path = False
+
+    try:
+        if isinstance(uploaded_file_or_path, (str, Path)):
+            # Handle path input
+            file_path = Path(uploaded_file_or_path).resolve() # Ensure absolute path
+            if not file_path.is_file(): raise FileNotFoundError(f"No file found at path: {file_path}")
+            file_name = file_path.name.lower()
+            file_obj = str(file_path) # Pass path string to pandas read functions
+            is_path = True
+            logger.info(f"Attempting to load data from path: {file_path}")
+        elif hasattr(uploaded_file_or_path, 'name') and hasattr(uploaded_file_or_path, 'read') and hasattr(uploaded_file_or_path, 'seek'):
+            # Handle file-like object input (e.g., from Streamlit's file_uploader)
+            file_name = uploaded_file_or_path.name.lower()
+            file_obj = uploaded_file_or_path
+            # IMPORTANT: Reset stream position for functions that might consume it
+            try:
+                uploaded_file_or_path.seek(0)
+            except Exception as seek_err:
+                logger.warning(f"Could not seek on uploaded file object: {seek_err}")
+            logger.info(f"Attempting to load data from uploaded file: {file_name}")
+        else:
+            raise ValueError("Input must be a file path string or a readable/seekable file-like object.")
+
+        # Read data based on extension
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(file_obj)
+        elif file_name.endswith((".xls", ".xlsx")):
+            # Requires openpyxl
+            df = pd.read_excel(file_obj, engine='openpyxl')
+        elif file_name.endswith(".json"):
+            df = pd.read_json(file_obj)
+        else:
+            raise ValueError(f"Unsupported file format '{Path(file_name).suffix}'. Please use CSV, XLSX, or JSON.")
+
+        if df.empty:
+            logger.warning(f"Loaded file '{file_name}' resulted in an empty DataFrame.")
+        else:
+            logger.info(f"Successfully loaded data from '{file_name}'. Shape: {df.shape}")
+
+        # Store filename as an attribute for later reference
+        df.attrs['filename'] = Path(file_name).name if is_path else uploaded_file_or_path.name
+
+        return df
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found error: {e}")
+        raise # Re-raise specific error
+    except ImportError as e:
+         # Catch missing dependency errors (like openpyxl for excel)
+         logger.error(f"Missing library for file type '{file_name}': {e}", exc_info=True)
+         raise ImportError(f"Missing required library for {Path(file_name).suffix} files: {e}. Please install it.") from e
+    except Exception as e:
+        fname = file_name or str(uploaded_file_or_path)
+        logger.error(f"Error loading file {fname}: {e}", exc_info=True)
+        raise ValueError(f"Could not read file ({fname}): {e}") from e
+
+# --- Placeholder for Loading from Cloud Storage ---
+# These would use the clients from backend/database/connectors.py
+
+def load_dataframe_from_s3(s3_client: Any, bucket: str, key: str) -> Optional[pd.DataFrame]:
+    """Loads data from an S3 object into a Pandas DataFrame."""
+    logger.info(f"Attempting to load data from S3: s3://{bucket}/{key}")
+    if s3_client is None:
+        logger.error("S3 client is not available/configured.")
+        return None
+    try:
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
+        body = obj['Body']
+        file_ext = key.lower().split('.')[-1]
+
+        if file_ext == 'csv':
+            df = pd.read_csv(body)
+        elif file_ext in ['xls', 'xlsx']:
+            # Read excel from bytes requires BytesIO
+            df = pd.read_excel(io.BytesIO(body.read()), engine='openpyxl')
+        elif file_ext == 'json':
+            df = pd.read_json(body)
+        # Add parquet, etc. later (requires pyarrow)
+        # elif file_ext == 'parquet':
+        #    df = pd.read_parquet(io.BytesIO(body.read()))
+        else:
+            raise ValueError(f"Unsupported file type '{file_ext}' in S3 object.")
+
+        df.attrs['filename'] = Path(key).name
+        df.attrs['source_uri'] = f"s3://{bucket}/{key}"
+        logger.info(f"Successfully loaded S3 object. Shape: {df.shape}")
+        return df
+
+    except Exception as e:
+        # Catch specific boto3 errors if needed (e.g., ClientError)
+        logger.error(f"Failed to load data from S3 (s3://{bucket}/{key}): {e}", exc_info=True)
+        return None # Return None on failure
+
+
+def load_dataframe_from_gcs(gcs_client: Any, bucket_name: str, blob_name: str) -> Optional[pd.DataFrame]:
+    """Loads data from a GCS blob into a Pandas DataFrame."""
+    logger.info(f"Attempting to load data from GCS: gs://{bucket_name}/{blob_name}")
+    if gcs_client is None:
+        logger.error("GCS client is not available/configured.")
+        return None
+    try:
+        bucket = gcs_client.get_bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        if not blob.exists():
+             raise FileNotFoundError(f"GCS blob not found: gs://{bucket_name}/{blob_name}")
+
+        # Download content as bytes
+        content_bytes = blob.download_as_bytes()
+        file_ext = blob_name.lower().split('.')[-1]
+        file_bytes_io = io.BytesIO(content_bytes)
+
+        if file_ext == 'csv':
+            df = pd.read_csv(file_bytes_io)
+        elif file_ext in ['xls', 'xlsx']:
+            df = pd.read_excel(file_bytes_io, engine='openpyxl')
+        elif file_ext == 'json':
+            df = pd.read_json(file_bytes_io)
+        # Add parquet etc.
+        else:
+            raise ValueError(f"Unsupported file type '{file_ext}' in GCS blob.")
+
+        df.attrs['filename'] = Path(blob_name).name
+        df.attrs['source_uri'] = f"gs://{bucket_name}/{blob_name}"
+        logger.info(f"Successfully loaded GCS object. Shape: {df.shape}")
+        return df
+
+    except FileNotFoundError as e:
+        logger.error(f"GCS file not found: {e}")
+        raise # Re-raise specific error
+    except Exception as e:
+        # Catch specific google cloud errors if needed
+        logger.error(f"Failed to load data from GCS (gs://{bucket_name}/{blob_name}): {e}", exc_info=True)
+        return None # Return None on failure
